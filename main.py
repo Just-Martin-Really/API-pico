@@ -20,8 +20,9 @@ WLAN_SSID   = "Production"
 WLAN_PASSWD = "Production-01"
 
 # ── MQTT ──────────────────────────────────────────────────────────────────────
-# Broker runs on the backend Pi; cert SAN includes backend-server.lab.local
-MQTT_BROKER    = "backend-server.lab.local"
+# MicroPython lwIP treats *.local as mDNS — use IP for connection, hostname for TLS SNI
+MQTT_BROKER    = "192.168.50.92"
+MQTT_TLS_HOST  = "backend-server.lab.local"
 MQTT_PORT      = 8883
 MQTT_CLIENT_ID = "sensor01"
 MQTT_USER      = "sensor01"
@@ -95,7 +96,7 @@ def setup_mqtt():
         password=MQTT_PW,
         ssl=True,
         ssl_params={
-            "server_hostname": MQTT_BROKER,
+            "server_hostname": MQTT_TLS_HOST,
             "ca_certs": CA_CERT_PATH,
         },
     )
