@@ -1,6 +1,6 @@
 from umqtt.simple import MQTTClient
 from machine import Pin, Timer
-from utime import sleep
+from utime import sleep, ticks_ms, ticks_diff
 import json
 import network
 import ssl
@@ -33,7 +33,10 @@ MQTT_SUB_TOPIC = b"actuator01/data"
 # CA cert must be copied to the Pico at /ca.crt via Thonny before running
 CA_CERT_PATH   = "/ca.crt"
 
-PUBLISH_INTERVAL_S = 60
+PUBLISH_INTERVAL_S  = 60
+PUBLISH_INTERVAL_MS = PUBLISH_INTERVAL_S * 1000
+PING_INTERVAL_MS    = 30 * 1000
+LOOP_TICK_S         = 0.2
 
 
 # ── Actuator helpers ──────────────────────────────────────────────────────────
@@ -94,6 +97,7 @@ def setup_mqtt():
         port=MQTT_PORT,
         user=MQTT_USER,
         password=MQTT_PW,
+        keepalive=60,
         ssl=True,
         ssl_params={
             "server_hostname": MQTT_TLS_HOST,
@@ -117,39 +121,52 @@ def read_sensor():
         return None, None
 
 
+def publish_reading(mqtt):
+    temp, hum = read_sensor()
+    if temp is not None and hum is not None:
+        temp_payload = json.dumps({"value": temp, "unit": "C"})
+        hum_payload  = json.dumps({"value": hum,  "unit": "%"})
+        mqtt.publish(MQTT_PUB_TOPIC, temp_payload)
+        print("Published temp:", temp_payload)
+        mqtt.publish(MQTT_PUB_TOPIC, hum_payload)
+        print("Published hum: ", hum_payload)
+        led_pin.toggle()
+    else:
+        print("Kein Messwert, Notabschaltung")
+        switch_heat(False)
+        switch_fan(False)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("Startup...")
     connect_to_network()
-
     mqtt = setup_mqtt()
+
+    last_publish_ms = ticks_ms() - PUBLISH_INTERVAL_MS
+    last_ping_ms    = ticks_ms()
 
     while True:
         try:
             mqtt.check_msg()
 
-            temp, hum = read_sensor()
-            if temp is not None and hum is not None:
-                temp_payload = json.dumps({"value": temp, "unit": "C"})
-                hum_payload  = json.dumps({"value": hum,  "unit": "%"})
+            now = ticks_ms()
 
-                mqtt.publish(MQTT_PUB_TOPIC, temp_payload)
-                print("Published temp:", temp_payload)
+            if ticks_diff(now, last_publish_ms) >= PUBLISH_INTERVAL_MS:
+                last_publish_ms = now
+                publish_reading(mqtt)
 
-                mqtt.publish(MQTT_PUB_TOPIC, hum_payload)
-                print("Published hum: ", hum_payload)
-
-                led_pin.toggle()
-            else:
-                print("Kein Messwert — Notabschaltung")
-                switch_heat(False)
-                switch_fan(False)
+            if ticks_diff(now, last_ping_ms) >= PING_INTERVAL_MS:
+                last_ping_ms = now
+                mqtt.ping()
 
         except Exception as e:
             print("Fehler im Hauptloop:", e)
             try:
                 mqtt = setup_mqtt()
+                last_ping_ms = ticks_ms()
             except Exception as re:
                 print("Reconnect fehlgeschlagen:", re)
+                sleep(5)
 
-        sleep(PUBLISH_INTERVAL_S)
+        sleep(LOOP_TICK_S)
