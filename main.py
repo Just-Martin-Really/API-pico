@@ -38,11 +38,11 @@ PUBLISH_INTERVAL_S = 60
 
 # ── Actuator helpers ──────────────────────────────────────────────────────────
 def switch_heat(on):
-    relais_heat.value(0 if on else 1)
+    relais_heat.value(1 if on else 0)
     print("Heizelement", "an" if on else "aus")
 
 def switch_fan(on):
-    relais_cool.value(1 if on else 0)
+    relais_cool.value(0 if on else 1)
     print("Lüfter", "an" if on else "aus")
 
 
