@@ -29,6 +29,11 @@ MQTT_USER      = "sensor01"
 MQTT_PW        = "CHANGE_ME"          # paste the value from mqtt_sensor01_password.txt here
 MQTT_PUB_TOPIC = "sensor01/data"
 MQTT_SUB_TOPIC = b"actuator01/data"
+MQTT_REQUEST_TOPIC = b"sensor01/request"
+
+# Set by mqtt_callback when a READ_NOW command arrives; the main loop drains it
+# so we don't call publish from inside check_msg's callback path.
+read_now_requested = False
 
 # CA cert must be copied to the Pico at /ca.crt via Thonny before running
 CA_CERT_PATH   = "/ca.crt"
@@ -49,8 +54,9 @@ def switch_fan(on):
     print("Lüfter", "an" if on else "aus")
 
 
-# ── MQTT callback (actuator commands from controller) ─────────────────────────
+# ── MQTT callback (actuator commands and read-now requests from controller) ──
 def mqtt_callback(topic, msg):
+    global read_now_requested
     print("MQTT recv:", topic, msg)
     try:
         payload = json.loads(msg.decode())
@@ -66,6 +72,8 @@ def mqtt_callback(topic, msg):
         switch_fan(True)
     elif cmd == "FAN_OFF":
         switch_fan(False)
+    elif cmd == "READ_NOW":
+        read_now_requested = True
 
 
 # ── WLAN ──────────────────────────────────────────────────────────────────────
@@ -107,7 +115,8 @@ def setup_mqtt():
     client.set_callback(mqtt_callback)
     client.connect()
     client.subscribe(MQTT_SUB_TOPIC)
-    print("MQTT verbunden, abonniert:", MQTT_SUB_TOPIC)
+    client.subscribe(MQTT_REQUEST_TOPIC)
+    print("MQTT verbunden, abonniert:", MQTT_SUB_TOPIC, MQTT_REQUEST_TOPIC)
     return client
 
 
@@ -151,6 +160,10 @@ if __name__ == "__main__":
             mqtt.check_msg()
 
             now = ticks_ms()
+
+            if read_now_requested:
+                read_now_requested = False
+                publish_reading(mqtt)
 
             if ticks_diff(now, last_publish_ms) >= PUBLISH_INTERVAL_MS:
                 last_publish_ms = now
